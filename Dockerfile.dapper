@@ -1,23 +1,21 @@
-ARG APT_GCC=library/buildpack-deps:noble
-
-FROM library/ubuntu:noble AS noble
+FROM library/ubuntu:noble AS downloader
 ARG DOWNLOADS=/usr/src/downloads
-ARG LINUX_FIRMWARE=linux-firmware=20240202.git36777504-0ubuntu1
-ARG LINUX_SOURCE=linux-source-6.8.0=6.8.0-11.11
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN set -x \
  && apt-get --assume-yes update \
  && apt-get --assume-yes download \
-    ${LINUX_FIRMWARE} \
-    ${LINUX_SOURCE} \
+    linux-firmware \
+    linux-source-6.8.0 \
  && mkdir -vp ${DOWNLOADS} \
  && mv -vf linux-firmware* ${DOWNLOADS}/ubuntu-firmware.deb \
  && mv -vf linux-source* ${DOWNLOADS}/ubuntu-kernel.deb
 
-FROM ${APT_GCC}
+FROM library/buildpack-deps:noble
 ARG DOWNLOADS=/usr/src/downloads
-COPY --from=noble ${DOWNLOADS}/ ${DOWNLOADS}/
+
+COPY --from=downloader ${DOWNLOADS}/ ${DOWNLOADS}/
+
 RUN apt-get update \
  && apt-get install -y \
     bc \
@@ -48,6 +46,19 @@ RUN apt-get update \
     rsync \
     vim \
    && rm -f /bin/sh && ln -s /bin/bash /bin/sh
+
+RUN mkdir -p ${DOWNLOADS}/kernel ${DOWNLOADS}/firmware
+RUN mkdir -p /source/build/kernel /source/build/firmware
+
+# kernel
+RUN dpkg-deb -x ${DOWNLOADS}/ubuntu-kernel.deb ${DOWNLOADS}/kernel
+RUN rsync -ar ${DOWNLOADS}/kernel/usr/src/linux-source-*/debian* /source/build/kernel/
+RUN tar xf ${DOWNLOADS}/kernel/usr/src/linux-source-*/linux-source*.tar.bz2 -C /source/build/kernel/. --strip-components=1
+
+# firmware
+RUN dpkg-deb -x ${DOWNLOADS}/ubuntu-firmware.deb ${DOWNLOADS}/firmware
+RUN rsync -a ${DOWNLOADS}/firmware/lib/firmware/* /source/build/firmware/
+
 
 ########## Dapper Configuration #####################
 
